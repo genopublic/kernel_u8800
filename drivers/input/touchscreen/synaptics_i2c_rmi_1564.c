@@ -512,6 +512,7 @@ static void synaptics_rmi4_work_func(struct work_struct *work)
 	int ret;
 /* delete some lines*/
     __u8 finger_status = 0x00;
+    __u8 finger2_status = 0x00;
     
     #ifdef CONFIG_HUAWEI_TOUCHSCREEN_EXTRA_KEY
 	u32 key_tmp = 0;
@@ -521,11 +522,11 @@ static void synaptics_rmi4_work_func(struct work_struct *work)
 
     __u8 reg = 0;
     __u8 *finger_reg = NULL;
-    u12 x = 0;
-    u12 y = 0;
-    u4 wx = 0;
-    u4 wy = 0;
-    u8 z = 0 ;
+    u12 x = 0, x1=0;
+    u12 y = 0, y1=0;
+    u4 wx = 0, wx1=0;
+    u4 wy = 0, wy1=0;
+    u8 z = 0 , z1=0;
 
 	struct synaptics_rmi4 *ts = container_of(work,
 					struct synaptics_rmi4, work);
@@ -546,87 +547,98 @@ static void synaptics_rmi4_work_func(struct work_struct *work)
 			__u8 finger_status_reg = 0;
 			__u8 fsr_len = (ts->f11.points_supported + 3) / 4;
 			//int fastest_finger = -1;
-			int touch = 0;
+//			int touch = 0;
             TS_DEBUG_RMI("f11.points_supported is %d\n",ts->f11.points_supported);
-            if(ts->is_support_multi_touch)
+            if(ts->is_support_multi_touch/* && (((f11_data[0]>>2)&3)==1)*/)  // multitouch
             {
+		finger_status_reg = f11_data[0] & 0xf;
+		finger_status = finger_status_reg & 3;
+		finger2_status = (finger_status_reg >>2) & 3;
+		finger_reg = &f11_data[fsr_len];
+		x = (finger_reg[0] << 4) | (finger_reg[2] & 0xf);
+		y = (finger_reg[1] << 4) | (finger_reg[2] >> 4);
+		wx = finger_reg[3] & 0xf;
+		wy = finger_reg[3] >> 4;
+		z = finger_reg[4];
+		finger_reg = &f11_data[fsr_len+5];
+		x1 = (finger_reg[0] << 4) | (finger_reg[2] & 0xf);
+		y1 = (finger_reg[1] << 4) | (finger_reg[2] >> 4);
+		wx1 = finger_reg[3] & 0xf;
+		wy1 = finger_reg[3] >> 4;
+		z1 = finger_reg[4];
+		if (z) {
+			input_report_abs(ts->input_dev, ABS_X, x);
+			input_report_abs(ts->input_dev, ABS_Y, y);
+		}
+		input_report_abs(ts->input_dev, ABS_PRESSURE, z);
+		input_report_abs(ts->input_dev, ABS_TOOL_WIDTH, min(wx, wy));
+		input_report_key(ts->input_dev, BTN_TOUCH, finger_status);
+		input_report_key(ts->input_dev, BTN_2, finger2_status);
+		if (finger2_status) {
+                        input_report_abs(ts->input_dev, ABS_HAT0X, x1);
+                	input_report_abs(ts->input_dev, ABS_HAT0Y, y1);
+                }
+		if (!finger_status)
+			z=0;
+		input_report_abs(ts->input_dev, ABS_MT_TOUCH_MAJOR, z);
+		input_report_abs(ts->input_dev, ABS_MT_WIDTH_MAJOR, z);
+               	input_report_abs(ts->input_dev, ABS_MT_POSITION_X, x);
+                input_report_abs(ts->input_dev, ABS_MT_POSITION_Y, y);
+ 		input_report_abs(ts->input_dev, ABS_MT_TOUCH_MINOR, min(wx, wy));
+		input_report_abs(ts->input_dev, ABS_MT_ORIENTATION, (wx > wy ? 1 : 0));
+                input_mt_sync(ts->input_dev);
+               	if (finger2_status) {
+                	input_report_abs(ts->input_dev, ABS_MT_TOUCH_MAJOR, z1);
+                        input_report_abs(ts->input_dev, ABS_MT_WIDTH_MAJOR, z1);
+                        input_report_abs(ts->input_dev, ABS_MT_POSITION_X, x1);
+                        input_report_abs(ts->input_dev, ABS_MT_POSITION_Y, y1);
+	               	input_report_abs(ts->input_dev, ABS_MT_TOUCH_MINOR, min(wx1, wy1));
+	               	input_report_abs(ts->input_dev, ABS_MT_ORIENTATION, (wx1 > wy1 ? 1 : 0));
 
-                for (f = 0; f < ts->f11.points_supported; ++f) 
-                {
+                        input_mt_sync(ts->input_dev);
+                } else {
+			if (ts->f11_fingers[1].status==1) {
+                		input_report_abs(ts->input_dev, ABS_MT_TOUCH_MAJOR, 0);
+                        	input_report_abs(ts->input_dev, ABS_MT_WIDTH_MAJOR, 0);
+                                input_mt_sync(ts->input_dev);
+                    	}
+		}
+		ts->f11_fingers[0].status = finger_status;
+		ts->f11_fingers[1].status = finger2_status;
+                input_sync(ts->input_dev);
 
-                	if (!(f % 4))
-                        
-                	finger_status_reg = f11_data[f / 4];
-
-                	finger_status = (finger_status_reg >> ((f % 4) * 2)) & 3;
-
-                	reg = fsr_len + 5 * f;
-                	finger_reg = &f11_data[reg];
-
-                	x = (finger_reg[0] * 0x10) | (finger_reg[2] % 0x10);
-                	y = (finger_reg[1] * 0x10) | (finger_reg[2] / 0x10);
-                	wx = finger_reg[3] % 0x10;
-                	wy = finger_reg[3] / 0x10;
-                	z = finger_reg[4];
-                    DBG_MASK("the x is %d the y is %d the stauts is %d!\n",x,y,finger_status);
-                	/* Linux 2.6.31 multi-touch */
-                	input_report_abs(ts->input_dev, ABS_MT_TRACKING_ID, f + 1);
-                	input_report_abs(ts->input_dev, ABS_MT_POSITION_X, x);
-                	input_report_abs(ts->input_dev, ABS_MT_POSITION_Y, y);
-                	input_report_abs(ts->input_dev, ABS_MT_TOUCH_MAJOR, z);
-                	input_report_abs(ts->input_dev, ABS_MT_TOUCH_MINOR, min(wx, wy));
-                	input_report_abs(ts->input_dev, ABS_MT_ORIENTATION, (wx > wy ? 1 : 0));
-                    input_report_abs(ts->input_dev, ABS_MT_WIDTH_MAJOR, z);
-                    input_mt_sync(ts->input_dev);  
-                    DBG_MASK("the touch inout is ok!\n");
-#ifdef CONFIG_HUAWEI_TOUCHSCREEN_EXTRA_KEY
-                	/* if the point is not the first one the point 
-                	 *location will not be throw into toucscreen extra
-                	 *key area */
-                	if(is_in_extra_region(x, y) && (0 == f))
-                	{
-                		key_tmp = touch_get_extra_keycode(x, y);
+                if(is_in_extra_region(x, y)) {
+                	key_tmp = touch_get_extra_keycode(x, y);
                         /*save the key value for some times the value is null*/
                         if((key_tmp_old != key_tmp) && (0 != key_tmp))
-                        {
-                            key_tmp_old = key_tmp;
-                        }
+                        	key_tmp_old = key_tmp;
                         /*when the key is changged report the first release*/
-                        if(key_tmp_old && (key_tmp_old != key_tmp))
-                        {
+                        if(key_tmp_old && (key_tmp_old != key_tmp)) {
                             input_report_key(ts->key_input, key_tmp_old, 0);
                     		key_pressed1 = 0;
                             DBG_MASK("when the key is changged report the first release!\n");
                         }
-
-                		if(key_tmp)
-                		{
-                    		if (0 == finger_status)//release bit
-                    		{
-                    			if(1 == key_pressed1)
-                    			{ 
-
-                                    input_report_key(ts->key_input, key_tmp, 0);
+                	if(key_tmp) {
+                    		if (0 == finger_status) { //release bit
+                    			if(1 == key_pressed1) { 
+	                                	input_report_key(ts->key_input, key_tmp, 0);
                     				key_pressed1 = 0;
-                                    DBG_MASK("when the key is released report!\n");
+                                    		DBG_MASK("when the key is released report!\n");
                     			}
-                    		}
-                    		else
-                    		{
-                    			if(0 == key_pressed1)
-                    			{
-                                    input_report_key(ts->key_input, key_tmp, 1);
-                                    key_pressed1 = 1;
-                                    DBG_MASK("the key is pressed report!\n");
+                    		} else {
+                    			if(0 == key_pressed1) {
+                                		input_report_key(ts->key_input, key_tmp, 1);
+                                    		key_pressed1 = 1;
+                                    		DBG_MASK("the key is pressed report!\n");
                     			}
                     		}    
-                		}
-                        input_sync(ts->key_input);	
-                	}
-                    /*when the touch is out of key area report the last key release*/
-                    else
-                    {
-                        if(0 == f)
+               		}
+        		input_sync(ts->key_input);	
+         	}
+          	/*when the touch is out of key area report the last key release*/
+               	else
+                {
+                	if(0 == f)
                         { 
                             if(1 == key_pressed1)
                             {
@@ -637,11 +649,7 @@ static void synaptics_rmi4_work_func(struct work_struct *work)
                             }
                         }
 
-                    }
-#endif
-                    ts->f11_fingers[f].status = finger_status;
-                    input_report_key(ts->input_dev, BTN_TOUCH, touch);
-                }
+        	}
             }
             else /* else with "if(ts->is_support_multi_touch)"*/
             {
@@ -664,6 +672,14 @@ static void synaptics_rmi4_work_func(struct work_struct *work)
 
 				input_report_abs(ts->input_dev, ABS_PRESSURE, z);
 				input_report_abs(ts->input_dev, ABS_TOOL_WIDTH, z);
+                	input_report_abs(ts->input_dev, ABS_MT_TOUCH_MAJOR, z);
+                    	input_report_abs(ts->input_dev, ABS_MT_WIDTH_MAJOR, z);
+                	input_report_abs(ts->input_dev, ABS_MT_POSITION_X, x);
+                	input_report_abs(ts->input_dev, ABS_MT_POSITION_Y, y);
+	               	input_report_abs(ts->input_dev, ABS_MT_TOUCH_MINOR, min(wx, wy));
+	               	input_report_abs(ts->input_dev, ABS_MT_ORIENTATION, (wx > wy ? 1 : 0));
+                input_mt_sync(ts->input_dev); 
+
                 input_report_key(ts->input_dev, BTN_TOUCH, finger_status);
                 input_sync(ts->input_dev);
             
@@ -743,8 +759,8 @@ static void synaptics_rmi4_work_func(struct work_struct *work)
             {
              	if (f11_data[f + EGR_FLICK_REG] & EGR_FLICK) 
                 {
-					input_report_rel(ts->input_dev, REL_X, f11_data[f + 2]);
-					input_report_rel(ts->input_dev, REL_Y, f11_data[f + 3]);
+	//				input_report_rel(ts->input_dev, REL_X, f11_data[f + 2]);
+	//				input_report_rel(ts->input_dev, REL_Y, f11_data[f + 3]);
 				}
 			}
 			if (ts->hasEgrSingleTap) 
@@ -970,6 +986,8 @@ static int synaptics_rmi4_probe(
 	set_bit(BTN_TOUCH, ts->input_dev->keybit);
 	set_bit(ABS_X, ts->input_dev->absbit);
 	set_bit(ABS_Y, ts->input_dev->absbit);
+	set_bit(ABS_PRESSURE, ts->input_dev->absbit);
+	set_bit(ABS_TOOL_WIDTH, ts->input_dev->absbit);
 /*we removed it to here to register the touchscreen first */
 	ret = input_register_device(ts->input_dev);
 	if (ret) 
@@ -994,7 +1012,7 @@ static int synaptics_rmi4_probe(
 			input_set_abs_params(ts->input_dev, ABS_MT_POSITION_X, 0, ts->f11_max_x, 0, 0);
 			input_set_abs_params(ts->input_dev, ABS_MT_POSITION_Y, 0, ts->f11_max_y - TS_KEY_Y_MAX, 0, 0);
             input_set_abs_params(ts->input_dev, ABS_MT_WIDTH_MAJOR, 0, 255, 0, 0);
-			input_set_abs_params(ts->input_dev, ABS_MT_TOUCH_MAJOR, 0, 0xF, 0, 0);
+			input_set_abs_params(ts->input_dev, ABS_MT_TOUCH_MAJOR, 0, 0xFF, 0, 0);
 			input_set_abs_params(ts->input_dev, ABS_MT_TOUCH_MINOR, 0, 0xF, 0, 0);
 			input_set_abs_params(ts->input_dev, ABS_MT_ORIENTATION, 0, 1, 0, 0);
           }
@@ -1003,7 +1021,7 @@ static int synaptics_rmi4_probe(
             input_set_abs_params(ts->input_dev, ABS_X, 0, ts->f11_max_x, 0, 0);
             input_set_abs_params(ts->input_dev, ABS_Y, 0, ts->f11_max_y - TS_KEY_Y_MAX, 0, 0);
             input_set_abs_params(ts->input_dev, ABS_PRESSURE, 0, 255, 0, 0);
-            input_set_abs_params(ts->input_dev, ABS_TOOL_WIDTH, 0, 255, 0, 0);
+            input_set_abs_params(ts->input_dev, ABS_TOOL_WIDTH, 0, 15, 0, 0);
                 
           }
 
@@ -1011,8 +1029,9 @@ static int synaptics_rmi4_probe(
 		if (ts->hasEgrPalmDetect)
 			set_bit(BTN_DEAD, ts->input_dev->keybit);
 		if (ts->hasEgrFlick) {
-			set_bit(REL_X, ts->input_dev->keybit);
-			set_bit(REL_Y, ts->input_dev->keybit);
+// disable flick reporting because current GB doesn't know what to do with it
+//			set_bit(REL_X, ts->input_dev->keybit);
+//			set_bit(REL_Y, ts->input_dev->keybit);
 		}
 		if (ts->hasEgrSingleTap)
 			set_bit(BTN_TOUCH, ts->input_dev->keybit);

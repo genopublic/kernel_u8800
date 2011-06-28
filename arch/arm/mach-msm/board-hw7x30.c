@@ -126,7 +126,7 @@ usb_pid_stru *curr_usb_pid_ptr = &usb_pid_array[0];
 
 #define MSM_PMEM_SF_SIZE	0x1700000
 #define MSM_FB_SIZE		0x500000
-#define MSM_GPU_PHYS_SIZE       SZ_2M
+#define MSM_GPU_PHYS_SIZE       0x200000
 /*add dsp memory space for video*/
 #define MSM_PMEM_ADSP_SIZE      0x3000000
 #define MSM_FLUID_PMEM_ADSP_SIZE	0x2800000
@@ -5291,7 +5291,7 @@ MACHINE_START(MSM8X55_SVLTE_FFA, "QCT MSM8X55 SVLTE FFA")
 	.timer = &msm_timer,
 MACHINE_END
 
-MACHINE_START(MSM7X30_U8800, "HUAWEI U8800 BOARD")
+MACHINE_START(MSM7X30_U8800, "u8800")
 #ifdef CONFIG_MSM_DEBUG_UART
 	.phys_io  = MSM_DEBUG_UART_PHYS,
 	.io_pg_offst = ((MSM_DEBUG_UART_BASE) >> 18) & 0xfffc,
