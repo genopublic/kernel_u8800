@@ -41,14 +41,16 @@ static int tocurrent(enum led_brightness value) {
 }
 static int red_blink=0;
 
+static int led_vals[3]={0,0,0};
+
 static void set_red_brightness(struct led_classdev *led_cdev,
 					enum led_brightness value)
 {
 	int ret = 0;
 
-	led_cdev->brightness = value;
 	RGB_PRINT("%s: value = %d\n",__func__, value);
-	ret = pmic_set_low_current_led_intensity(PM_LOW_CURRENT_LED_DRV0, tocurrent(value));
+	led_vals[0]=tocurrent(value);
+	ret = pmic_set_low_current_led_intensity(PM_LOW_CURRENT_LED_DRV0, led_vals[0]);
 	if(ret)
 	{
 		RGB_PRINT("%s: failed\n",__func__);
@@ -64,9 +66,9 @@ static void set_green_brightness(struct led_classdev *led_cdev,
 {
 	int ret = 0;
 
-	led_cdev->brightness = value;
 	RGB_PRINT("%s: value = %d\n",__func__, value);	
-	ret = pmic_set_low_current_led_intensity(PM_LOW_CURRENT_LED_DRV1, tocurrent(value));
+	led_vals[1]=tocurrent(value);
+	ret = pmic_set_low_current_led_intensity(PM_LOW_CURRENT_LED_DRV1, led_vals[1]);
 	if(ret)
 	{
 		RGB_PRINT("%s: failed\n",__func__);
@@ -84,7 +86,8 @@ static void set_blue_brightness(struct led_classdev *led_cdev,
 	
 	led_cdev->brightness = value;
 	RGB_PRINT("%s: value = %d\n",__func__, value);	
-	ret = pmic_set_low_current_led_intensity(PM_LOW_CURRENT_LED_DRV2, tocurrent(value));
+	led_vals[2]=tocurrent(value);
+	ret = pmic_set_low_current_led_intensity(PM_LOW_CURRENT_LED_DRV2, led_vals[2]);
 	if(ret)
 	{
 		RGB_PRINT("%s: failed\n",__func__);
@@ -100,6 +103,8 @@ static ssize_t led_blink_store(struct device *dev,
 {
 	int val;
 	sscanf(buf, "%u", &val);
+	printk("Blink %d",val);
+/*
 	if(val==1) {
 		red_blink=1;
 		pmic_set_low_current_led_intensity(PM_LOW_CURRENT_LED_DRV0, 2);
@@ -107,6 +112,7 @@ static ssize_t led_blink_store(struct device *dev,
 		red_blink=0;
 		pmic_set_low_current_led_intensity(PM_LOW_CURRENT_LED_DRV0, 0);
 	}
+*/
 	return count;
 }
 
@@ -191,8 +197,10 @@ static int rgb_leds_suspend(struct platform_device *pdev, pm_message_t state)
 
 static int rgb_leds_resume(struct platform_device *pdev)
 {
-        if(red_blink)
-		pmic_set_low_current_led_intensity(PM_LOW_CURRENT_LED_DRV0, 2);
+	pmic_set_low_current_led_intensity(PM_LOW_CURRENT_LED_DRV0, led_vals[0]);
+	pmic_set_low_current_led_intensity(PM_LOW_CURRENT_LED_DRV1, led_vals[1]);
+	pmic_set_low_current_led_intensity(PM_LOW_CURRENT_LED_DRV2, led_vals[2]);
+
         return 0;  
 }
 
