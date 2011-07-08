@@ -156,6 +156,12 @@ void *libra_sdio_getprivdata(struct sdio_func *sdio_func_dev)
 }
 EXPORT_SYMBOL(libra_sdio_getprivdata);
 
+// give the libra module a fixed mac address
+unsigned long long proc_comm_ftm_wlanaddr_read(void) {
+	return 0xAF5026341ull;
+}
+EXPORT_SYMBOL(proc_comm_ftm_wlanaddr_read);
+
 /*
  * Function driver claims the SDIO device
  */
@@ -348,16 +354,20 @@ int libra_sdio_suspend (struct device *dev)
 
 	if(libra_suspend_hldr)
 	{
+		unsigned int attempts = 0;
 		/* Disable SDIO IRQ when driver is being suspended */
-		libra_enable_sdio_irq(func, 0);
-			
-		ret = libra_suspend_hldr(func);
-		if (ret) {
-			printk(KERN_ERR "%s: Libra driver is not able to suspend\n" , __func__);
-			/* Error - Restore SDIO IRQ */
-			libra_enable_sdio_irq(func, 1);		
+		do {
+			libra_enable_sdio_irq(func, 0);
+			ret = libra_suspend_hldr(func);
+			if (ret) {
+				printk(KERN_ERR "%s: Libra driver is not able to suspend\n" , __func__);
+				/* Error - Restore SDIO IRQ */
+				libra_enable_sdio_irq(func, 1);		
+				msleep(10);
+			}
+		} while(ret && ++attempts<5);
+		if (ret)
 			return ret;
-		}
 	}
 
 	return sdio_set_host_pm_flags(func, MMC_PM_WAKE_SDIO_IRQ);
